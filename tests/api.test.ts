@@ -132,3 +132,31 @@ describe("hardening", () => {
     expect(r.ok === false && r.kind).toBe("network")
   })
 })
+
+describe("user agent", () => {
+  const capture = () => {
+    const seen: string[] = []
+    const fetch: FetchFn = async (_u, init) => {
+      seen.push(new Headers(init!.headers).get("user-agent") ?? "")
+      return new Response("{}", { status: 200 })
+    }
+    return { seen, fetch }
+  }
+
+  test("sends the given user agent", async () => {
+    const { seen, fetch } = capture()
+    await fetchUsage(TOKEN, { fetch: fetch as never, now: () => NOW, userAgent: "claude-code/9.9.9" })
+    expect(seen).toEqual(["claude-code/9.9.9"])
+  })
+
+  test("defaults to the Claude Code fallback agent", async () => {
+    const { seen, fetch } = capture()
+    await fetchUsage(TOKEN, { fetch: fetch as never, now: () => NOW })
+    expect(seen).toEqual(["claude-code/2.1.287"])
+  })
+
+  test("retry-after: 0 counts as absent so the persisted backoff applies", async () => {
+    const r = await run(respond(429, "", { "retry-after": "0" }))
+    expect(r.ok === false && r.kind === "rate_limited" && r.retryAfterMs).toBeUndefined()
+  })
+})

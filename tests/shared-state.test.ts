@@ -18,7 +18,7 @@ const snapshot: UsageSnapshot = {
   fetchedAt: new Date("2026-10-02T18:30:00Z"),
 }
 const state: SharedState = {
-  version: 1,
+  version: 2,
   snapshot,
   fetchedAt: snapshot.fetchedAt.getTime(),
   blockedUntil: 5000,
@@ -55,7 +55,7 @@ describe("read/write", () => {
     expect(raw.snapshot.fetchedAt).toBe("2026-10-02T18:30:00.000Z")
   })
 
-  test.each(["", "not json {", "[1]", "null", '{"version":2}', '{"version":1,"snapshot":"x"}'])(
+  test.each(["", "not json {", "[1]", "null", '{"version":1}', '{"version":3}', '{"version":2,"snapshot":"x"}'])(
     "corrupt content %j reads as empty without throwing",
     (content) => {
       const { store, mem } = setup()
@@ -64,6 +64,13 @@ describe("read/write", () => {
       expect(store.read().blockedUntil).toBe(0)
     },
   )
+
+  test("a v1 file with a persisted 429 block is discarded so the upgrade is not blocked", () => {
+    const { store, mem } = setup()
+    const old = { ...state, version: 1, blockedUntil: Number.MAX_SAFE_INTEGER, lastError: { kind: "rate_limited", message: "429" } }
+    mem.files.set(STATE, { data: JSON.stringify(old), mtime: 0 })
+    expect(store.read()).toEqual(emptyState())
+  })
 
   test("a malformed snapshot is dropped but valid siblings survive", () => {
     const { store, mem } = setup()

@@ -3,7 +3,8 @@ import { isFiniteNumber, isObject, reviveSnapshot } from "./snapshot-codec"
 import type { StoreFs } from "./shared-fs"
 import type { FetchErrorKind, UsageSnapshot } from "./types"
 
-export const STATE_VERSION = 1
+/** Bumped when persisted data may be wrong for the current code; older files are then ignored (v2: UA fix, drops 429 blocks caused by the old user agent). */
+export const STATE_VERSION = 2
 export const LOCK_STALE_MS = 30_000
 
 const ERROR_KINDS: readonly string[] = ["network", "unauthorized", "rate_limited", "http", "parse"]

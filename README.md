@@ -94,6 +94,11 @@ Invalid values fall back to the defaults.
 The plugin calls `GET https://api.anthropic.com/api/oauth/usage` with your Claude Code OAuth token, the same data
 behind Claude Code's `/usage` screen. A single poller is shared per TUI instance, not per render.
 
+**Requests identify as Claude Code.** They are sent with `User-Agent: claude-code/<installed version>` (taken from
+`claude --version`, falling back to `claude-code/2.1.287` when Claude Code cannot be run). Anthropic heavily
+rate-limits other user agents on this undocumented endpoint, answering HTTP 429 even at one request per minute. This
+may stop working at any time. Only your own usage data is requested, with your own token.
+
 Credentials are looked up **read-only**, in this order:
 
 1. `CLAUDE_CODE_OAUTH_TOKEN` environment variable
@@ -126,7 +131,8 @@ fresh `claude` login is picked up quickly.
 
 - The token is sent only to `api.anthropic.com` over HTTPS and never leaves your machine otherwise.
 - The token is never written, logged or cached to disk, and **never refreshed**: if it expired, run `claude` once.
-- No cookie scraping, no browser sessions, no telemetry.
+- No cookie scraping, no browser sessions, no telemetry. The only subprocess is `claude --version` (no shell, 3s timeout,
+  once per TUI process) to read the installed Claude Code version for the user agent.
 - The usage endpoint is **undocumented and unofficial**; it may change or disappear without notice. The plugin parses
   it defensively and shows a muted message instead of failing.
 

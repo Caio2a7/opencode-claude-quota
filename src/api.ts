@@ -1,6 +1,6 @@
 import { parseUsageResponse } from "./parse"
 import type { FetchResult } from "./types"
-import { VERSION } from "./version"
+import { FALLBACK_USER_AGENT } from "./user-agent"
 
 export const USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 const DEFAULT_TIMEOUT_MS = 10_000
@@ -10,6 +10,8 @@ export interface FetchOptions {
   fetch?: typeof fetch
   timeoutMs?: number
   now?: () => Date
+  /** Sent as `User-Agent`. Anthropic throttles non-Claude-Code agents on this endpoint. */
+  userAgent?: string
 }
 
 /** `undefined` when the header is absent or unusable, so callers can apply their own backoff. */
@@ -44,7 +46,7 @@ async function request(token: string, opts: FetchOptions): Promise<Response | st
         Authorization: `Bearer ${token}`,
         "anthropic-beta": "oauth-2025-04-20",
         Accept: "application/json",
-        "User-Agent": `opencode-claude-quota/${VERSION}`,
+        "User-Agent": opts.userAgent ?? FALLBACK_USER_AGENT,
       },
       signal: controller.signal,
     })

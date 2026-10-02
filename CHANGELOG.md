@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Fixed
 
+- Persistent HTTP 429 caused by the non-Claude-Code user agent: requests now identify as `claude-code/<installed
+  version>` (fallback `2.1.287`), which the usage endpoint does not throttle. Cache files from earlier versions
+  (state schema v1) are discarded, so an old persisted 429 block does not outlive the upgrade.
 - Running several OpenCode instances at once no longer triggers HTTP 429: instances share one cached snapshot, one
   cross-process fetch lock and one persisted backoff, so N windows make about one request per interval.
 - Rate limiting no longer looks like an error: the sidebar keeps showing the data and adds a muted
