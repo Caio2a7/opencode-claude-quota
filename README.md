@@ -23,8 +23,8 @@ updated 12s ago
 - Per-model weekly limits (Opus, Sonnet) when your plan reports them.
 - Weekly usage breakdown by surface (Claude Code, Chats, Cowork, …) and extra usage when enabled.
 - Relative reset times that tick without refetching; stale data stays visible with a `(stale)` marker on errors.
-- Polite polling: 60s default (30s minimum), exponential backoff, `Retry-After` support, debounced refresh after each
-  finished turn.
+- Polite polling: 120s default (60s minimum), shared across OpenCode windows, `Retry-After` support and persisted
+  exponential backoff; a refresh after a finished turn only fetches when the data is older than 60s.
 - `/claude-quota` slash command (and command-palette entry) to force a refresh.
 - Native OpenCode **v2** plugin, strictly read-only credential handling.
 
@@ -82,7 +82,7 @@ wide terminal).
 
 | Option            | Type    | Default | Description                                                         |
 | ----------------- | ------- | ------- | ------------------------------------------------------------------- |
-| `refreshInterval` | number  | `60`    | Polling interval in seconds. Values below `30` are raised to `30`.  |
+| `refreshInterval` | number  | `120`   | Polling interval in seconds. Values below `60` are raised to `60`.  |
 | `showBreakdown`   | boolean | `true`  | Show the "This week" usage-by-surface rows (0% rows are skipped).   |
 | `showModels`      | boolean | `true`  | Show per-model weekly windows (Opus, Sonnet) when present.          |
 | `credentialsPath` | string  | –       | Credentials file location, used as-is (`~` is not expanded).        |
@@ -101,12 +101,26 @@ Credentials are looked up **read-only**, in this order:
 3. macOS Keychain (`Claude Code-credentials`), on macOS only and only when the credentials file is missing; macOS
    may show a keychain access prompt the first time.
 
+### Multiple OpenCode windows
+
+The usage endpoint has a tight rate limit, so all OpenCode instances on a machine coordinate through a small cache
+file: `${XDG_CACHE_HOME:-~/.cache}/opencode-claude-quota/state.json` (directory `0700`, file `0600`, written
+atomically). Fresh data is adopted from it instead of fetching, a `fetch.lock` file (stale after 30s) lets a single
+instance make the request, and the failure backoff is stored there too. N windows therefore make about one request per
+interval, and a new window renders immediately from the cache.
+
+The file contains the usage snapshot (percentages, reset times, breakdown, extra usage), when it was fetched, the
+backoff deadline, the consecutive failure count and the last error. It never contains the token. Deleting it is
+always safe; a missing or corrupt file is treated as empty.
+
 ### Backoff
 
-Network errors, HTTP errors and repeated "token rejected" (401/403) responses are retried with capped exponential
-backoff (interval × 2^failures, at most 10 minutes). After network/HTTP errors and 429s, `/claude-quota` is blocked
-until the backoff elapses; 429 honours `Retry-After` (capped at 1 hour). Missing credentials and unexpected internal
-errors keep the normal interval, so a fresh `claude` login is picked up quickly.
+Persisted for every instance: a 429 blocks requests for `Retry-After` (capped at 1 hour) or, without that header,
+2m, 4m, 8m… up to 30m; network and HTTP errors use the same 2m → 30m schedule. A success resets it. While blocked,
+`/claude-quota` shows "Rate limited by Anthropic — retrying in Xm" and the sidebar shows a muted
+"rate limited · retry in Xm" line next to the last known data. Repeated "token rejected" (401/403) responses back off
+per instance (up to 10 minutes) without blocking other windows, and missing credentials keep the normal interval so a
+fresh `claude` login is picked up quickly.
 
 ## Privacy & security
 
@@ -123,8 +137,8 @@ errors keep the normal interval, so a fresh `claude` login is picked up quickly.
 | "Claude Code credentials not found"       | Run `claude` and log in, or set `CLAUDE_CODE_OAUTH_TOKEN`.                  |
 | "token expired"                           | Run `claude` once so Claude Code refreshes its own token.                   |
 | Nothing in the sidebar                    | Open a session, widen the terminal and check `session.sidebar` in `cli.json`. |
-| Numbers look stale                        | Run `/claude-quota`; refreshes are debounced to one request per 30s.        |
-| Rate limited                              | The plugin backs off automatically; raise `refreshInterval`.                |
+| Numbers look stale                        | Run `/claude-quota`; it reuses data fresher than 30s and respects any block. |
+| "rate limited · retry in Xm"              | Expected: the plugin waits it out for all windows; raise `refreshInterval`. |
 
 Plugin load errors are logged to `~/.local/share/opencode/log/opencode.log`.
 

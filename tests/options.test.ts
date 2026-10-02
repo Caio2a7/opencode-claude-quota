@@ -4,7 +4,7 @@ import { parseOptions } from "../src/options"
 describe("parseOptions", () => {
   test("applies defaults for missing options", () => {
     expect(parseOptions(undefined)).toEqual({
-      refreshIntervalMs: 60_000,
+      refreshIntervalMs: 120_000,
       showBreakdown: true,
       showModels: true,
       credentialsPath: undefined,
@@ -13,18 +13,19 @@ describe("parseOptions", () => {
   })
 
   test.each([
-    [5, 30_000],
-    [0, 30_000],
-    [-10, 30_000],
-    [30, 30_000],
+    [5, 60_000],
+    [0, 60_000],
+    [-10, 60_000],
+    [30, 60_000],
+    [60, 60_000],
     [90, 90_000],
-    [45.5, 45_500],
+    [90.5, 90_500],
   ])("refreshInterval %p seconds -> %p ms", (seconds, ms) => {
     expect(parseOptions({ refreshInterval: seconds }).refreshIntervalMs).toBe(ms)
   })
 
   test.each([["fast"], [null], [Number.NaN], [Infinity], [undefined]])("invalid refreshInterval %p -> default", (v) => {
-    expect(parseOptions({ refreshInterval: v }).refreshIntervalMs).toBe(60_000)
+    expect(parseOptions({ refreshInterval: v }).refreshIntervalMs).toBe(120_000)
   })
 
   test("booleans must be real booleans", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createPoller, MAX_BACKOFF_MS, type LoadResult, type Timers } from "../src/poller"
+import { clampInterval, createPoller, DEFAULT_INTERVAL_MS, MIN_INTERVAL_MS, type LoadRequest, type LoadResult, type Timers } from "../src/poller"
 import type { UsageSnapshot } from "../src/types"
 
 const snapshot = (n: number): UsageSnapshot => ({
@@ -8,12 +8,14 @@ const snapshot = (n: number): UsageSnapshot => ({
   breakdown: [],
   fetchedAt: new Date(0),
 })
+const ok = (n: number, nextInMs?: number): LoadResult => ({ ok: true, snapshot: snapshot(n), nextInMs })
+const settle = () => new Promise((r) => setTimeout(r, 0))
 
 function harness(results: LoadResult[], intervalMs?: number) {
   let time = 1_000_000
   const pending = new Map<number, { at: number; fn: () => void }>()
+  const requests: LoadRequest[] = []
   let nextId = 1
-  let calls = 0
   const timers: Timers = {
     set: (fn, ms) => {
       const id = nextId++
@@ -26,7 +28,7 @@ function harness(results: LoadResult[], intervalMs?: number) {
     intervalMs,
     now: () => new Date(time),
     timers,
-    load: async () => results[Math.min(calls++, results.length - 1)]!,
+    load: async (request) => results[Math.min(requests.push(request) - 1, results.length - 1)]!,
   })
   const nextDelay = (): number | null => {
     const first = [...pending.values()].sort((a, b) => a.at - b.at)[0]
@@ -40,152 +42,92 @@ function harness(results: LoadResult[], intervalMs?: number) {
         t.fn()
       }
     }
-    await Promise.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
+    await settle()
   }
-  return { poller, advance, nextDelay, calls: () => calls }
+  return { poller, advance, nextDelay, requests, now: () => time }
 }
 
-const ok = (n: number): LoadResult => ({ ok: true, snapshot: snapshot(n) })
-const fail = (kind: "network" | "http" | "unauthorized"): LoadResult => ({ ok: false, kind, message: kind })
-const settle = () => new Promise((r) => setTimeout(r, 0))
+describe("clampInterval", () => {
+  test("defaults to 120s with a 60s floor", () => {
+    expect(DEFAULT_INTERVAL_MS).toBe(120_000)
+    expect(MIN_INTERVAL_MS).toBe(60_000)
+    expect(clampInterval(undefined)).toBe(120_000)
+    expect(clampInterval(Number.NaN)).toBe(120_000)
+    expect(clampInterval(1_000)).toBe(60_000)
+    expect(clampInterval(90_500)).toBe(90_500)
+  })
+})
 
 describe("poller", () => {
-  test("fetches on start and schedules the default 60s interval", async () => {
+  test("loads on start and schedules the default interval", async () => {
     const h = harness([ok(10)])
     h.poller.start()
     await settle()
     expect(h.poller.getState().snapshot?.windows[0]?.utilization).toBe(10)
-    expect(h.nextDelay()).toBe(60_000)
-    h.poller.stop()
-  })
-
-  test("clamps the interval to a 30s minimum", async () => {
-    const h = harness([ok(1)], 5_000)
-    h.poller.start()
-    await settle()
-    expect(h.nextDelay()).toBe(30_000)
-    h.poller.stop()
-  })
-
-  test("keeps the last good snapshot when a later fetch fails", async () => {
-    const h = harness([ok(10), fail("network")])
-    h.poller.start()
-    await settle()
-    await h.advance(60_000)
-    await settle()
-    const state = h.poller.getState()
-    expect(state.snapshot?.windows[0]?.utilization).toBe(10)
-    expect(state.error?.kind).toBe("network")
-    h.poller.stop()
-  })
-
-  test("backs off exponentially on network errors, capped at 10 minutes", async () => {
-    const h = harness([fail("network")])
-    h.poller.start()
-    await settle()
-    expect(h.nextDelay()).toBe(60_000)
-    const delays: number[] = []
-    for (let i = 0; i < 6; i++) {
-      await h.advance(h.nextDelay() ?? 0)
-      await settle()
-      delays.push(h.nextDelay() ?? 0)
-    }
-    expect(delays[0]).toBe(120_000)
-    expect(delays[1]).toBe(240_000)
-    expect(Math.max(...delays)).toBe(MAX_BACKOFF_MS)
-    h.poller.stop()
-  })
-
-  test("waits at least retryAfterMs when rate limited", async () => {
-    const h = harness([{ ok: false, kind: "rate_limited", message: "slow down", retryAfterMs: 300_000 }])
-    h.poller.start()
-    await settle()
-    expect(h.nextDelay()).toBe(300_000)
-    h.poller.stop()
-  })
-
-  test("resets the backoff after a success", async () => {
-    const h = harness([fail("http"), ok(5)])
-    h.poller.start()
-    await settle()
-    await h.advance(60_000)
-    await settle()
-    expect(h.poller.getState().error).toBeNull()
-    expect(h.nextDelay()).toBe(60_000)
-    h.poller.stop()
-  })
-
-  test("debounces manual refresh within 30s of a real request", async () => {
-    const h = harness([ok(1), ok(2)])
-    h.poller.start()
-    await settle()
-    expect(await h.poller.refresh()).toBe(false)
-    expect(h.calls()).toBe(1)
-    await h.advance(30_000)
-    expect(await h.poller.refresh()).toBe(true)
-    expect(h.poller.getState().snapshot?.windows[0]?.utilization).toBe(2)
-    h.poller.stop()
-  })
-
-  test("stop cancels the pending timer", async () => {
-    const h = harness([ok(1)])
-    h.poller.start()
-    await settle()
-    h.poller.stop()
-    expect(h.nextDelay()).toBeNull()
-  })
-
-  test("notifies subscribers and supports unsubscribe", async () => {
-    const h = harness([ok(1)])
-    let notified = 0
-    const off = h.poller.subscribe(() => notified++)
-    h.poller.start()
-    await settle()
-    expect(notified).toBeGreaterThanOrEqual(2)
-    off()
-    h.poller.stop()
-  })
-
-  test("manual refresh cannot bypass network backoff", async () => {
-    const h2 = harness([fail("network"), fail("network"), ok(1)])
-    h2.poller.start()
-    await settle()
-    await h2.advance(60_000)
-    await settle()
-    expect(await h2.poller.refresh()).toBe(false)
-    await h2.advance(60_000)
-    expect(await h2.poller.refresh()).toBe(false)
-    expect(h2.calls()).toBe(2)
-    h2.poller.stop()
-  })
-
-  test("backs off on repeated unauthorized responses but still allows manual refresh", async () => {
-    const h = harness([fail("unauthorized"), fail("unauthorized"), ok(1)])
-    h.poller.start()
-    await settle()
-    expect(h.nextDelay()).toBe(60_000)
-    await h.advance(60_000)
-    await settle()
     expect(h.nextDelay()).toBe(120_000)
-    await h.advance(30_000) // past the debounce window, still inside the backoff
-    expect(await h.poller.refresh()).toBe(true)
+    expect(h.requests).toEqual([{ maxAgeMs: 120_000 }])
+    h.poller.stop()
+  })
+
+  test("the loader's nextInMs overrides the interval, floored at 1s", async () => {
+    const h = harness([ok(1, 45_000), ok(2, 10)])
+    h.poller.start()
+    await settle()
+    expect(h.nextDelay()).toBe(45_000)
+    await h.advance(45_000)
+    expect(h.nextDelay()).toBe(1_000)
+    h.poller.stop()
+  })
+
+  test("failures keep the last snapshot, expose retryAt and follow the loader's delay", async () => {
+    const failure: LoadResult = { ok: false, kind: "rate_limited", message: "429", retryAfterMs: 240_000, nextInMs: 240_000 }
+    const h = harness([ok(5), failure, ok(6)])
+    h.poller.start()
+    await settle()
+    await h.advance(120_000)
+    const { snapshot, error } = h.poller.getState()
+    expect(snapshot?.windows[0]?.utilization).toBe(5)
+    expect(error).toEqual({ kind: "rate_limited", message: "429", retryAt: new Date(h.now() + 240_000) })
+    expect(h.nextDelay()).toBe(240_000)
+    await h.advance(240_000)
     expect(h.poller.getState().error).toBeNull()
     h.poller.stop()
   })
 
-  test("internal and credential failures keep the plain interval", async () => {
-    const h = harness([{ ok: false, kind: "internal", message: "x" }])
+  test("a failure may carry the shared snapshot to adopt", async () => {
+    const h = harness([{ ok: false, kind: "network", message: "x", snapshot: snapshot(77) }])
     h.poller.start()
     await settle()
-    await h.advance(60_000)
-    await settle()
-    expect(h.nextDelay()).toBe(60_000)
+    expect(h.poller.getState().snapshot?.windows[0]?.utilization).toBe(77)
     h.poller.stop()
   })
 
-  test("stop() during an in-flight attempt does not reschedule or publish", async () => {
+  test("failures without a block have no retryAt", async () => {
+    const h = harness([{ ok: false, kind: "credentials", message: "no creds" }])
+    h.poller.start()
+    await settle()
+    expect(h.poller.getState().error).toEqual({ kind: "credentials", message: "no creds", retryAt: null })
+    h.poller.stop()
+  })
+
+  test("renders the initial snapshot immediately", () => {
+    const poller = createPoller({ initial: snapshot(9), load: () => new Promise(() => {}) })
+    expect(poller.getState().snapshot?.windows[0]?.utilization).toBe(9)
+  })
+
+  test("refresh passes its max age and skips while a load is in flight", async () => {
+    const h = harness([ok(1)])
+    h.poller.start()
+    const skipped = await h.poller.refresh(60_000)
+    await settle()
+    expect(skipped).toBe(false)
+    expect(await h.poller.refresh(60_000)).toBe(true)
+    expect(await h.poller.refresh()).toBe(true)
+    expect(h.requests.map((r) => r.maxAgeMs)).toEqual([120_000, 60_000, 30_000])
+    h.poller.stop()
+  })
+
+  test("stop() during an in-flight load does not reschedule or publish", async () => {
     let release: (r: LoadResult) => void = () => {}
     const scheduled: number[] = []
     const timers: Timers = { set: (_fn, ms) => scheduled.push(ms), clear: () => {} }
@@ -197,5 +139,18 @@ describe("poller", () => {
     await settle()
     expect(scheduled).toEqual([])
     expect(poller.getState().snapshot).toBeNull()
+  })
+
+  test("subscribers are notified and can unsubscribe", async () => {
+    const h = harness([ok(1)])
+    const seen: boolean[] = []
+    const off = h.poller.subscribe((s) => seen.push(s.loading))
+    h.poller.start()
+    await settle()
+    expect(seen).toEqual([true, false])
+    off()
+    await h.advance(120_000)
+    expect(seen).toHaveLength(2)
+    h.poller.stop()
   })
 })

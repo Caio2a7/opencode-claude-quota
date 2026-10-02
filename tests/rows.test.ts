@@ -56,12 +56,26 @@ describe("buildRows", () => {
   })
 
   test("shows the error with a stale marker when a snapshot exists", () => {
-    const out = texts({ ...base, error: { kind: "network", message: "offline" } })
+    const out = texts({ ...base, error: { kind: "network", message: "offline", retryAt: null } })
     expect(out).toContain("offline (stale)")
   })
 
   test("shows only the error without a snapshot", () => {
-    const out = texts({ ...base, snapshot: null, error: { kind: "credentials", message: "Not signed in" } })
+    const out = texts({ ...base, snapshot: null, error: { kind: "credentials", message: "Not signed in", retryAt: null } })
     expect(out).toEqual(["Not signed in"])
+  })
+
+  test("rate limiting with a snapshot shows the data plus one muted retry line, no raw message or stale marker", () => {
+    const retryAt = new Date(now.getTime() + 4 * 60_000)
+    const out = texts({ ...base, error: { kind: "rate_limited", message: "Claude usage endpoint rate limited (HTTP 429)", retryAt } })
+    expect(out).toContain("rate limited · retry in 4m")
+    expect(out.some((t) => t.includes("429") || t.includes("stale"))).toBe(false)
+    expect(out.some((t) => t.startsWith("updated"))).toBe(true)
+    expect(out.some((t) => t.includes("5h"))).toBe(true)
+  })
+
+  test("rate limiting without a retry time or snapshot stays short", () => {
+    const out = texts({ ...base, snapshot: null, error: { kind: "rate_limited", message: "429", retryAt: null } })
+    expect(out).toEqual(["rate limited"])
   })
 })

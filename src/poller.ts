@@ -1,19 +1,20 @@
 import type { FetchResult, UsageSnapshot } from "./types"
 
-export const DEFAULT_INTERVAL_MS = 60_000
-export const MIN_INTERVAL_MS = 30_000
-export const MAX_BACKOFF_MS = 10 * 60_000
-
-/** Failures retried with capped exponential backoff. Missing credentials and internal errors keep the plain interval. */
-const BACKOFF_KINDS: ReadonlySet<string> = new Set(["network", "http", "unauthorized"])
-/** Failures that also block manual/event refreshes until the backoff elapses. */
-const BLOCKING_KINDS: ReadonlySet<string> = new Set(["network", "http", "rate_limited"])
+export const DEFAULT_INTERVAL_MS = 120_000
+export const MIN_INTERVAL_MS = 60_000
+/** A post-turn refresh only fetches when the shared snapshot is older than this. */
+export const POST_TURN_MAX_AGE_MS = 60_000
+/** A manual refresh only fetches when the shared snapshot is older than this. */
+export const MANUAL_MAX_AGE_MS = 30_000
+const MIN_DELAY_MS = 1_000
 
 export type PollerErrorKind = "credentials" | "internal" | "network" | "unauthorized" | "rate_limited" | "http" | "parse"
 
 export interface PollerError {
   kind: PollerErrorKind
   message: string
+  /** When the next request may happen, if the failure is a known block (rate limit, backoff). */
+  retryAt: Date | null
 }
 
 export interface PollerState {
@@ -28,12 +29,25 @@ export interface Timers {
   clear(handle: unknown): void
 }
 
-export type LoadResult = FetchResult | { ok: false; kind: "credentials" | "internal"; message: string; retryAfterMs?: undefined }
+export interface LoadRequest {
+  /** Cached data younger than this must be reused instead of fetching. */
+  maxAgeMs: number
+}
+
+type LoadFailure = { ok: false; kind: "credentials" | "internal"; message: string; retryAfterMs?: number }
+
+/**
+ * `snapshot` on a failure carries the last known data; `nextInMs` overrides the polling delay;
+ * `retryAfterMs` on a failure is how long requests are blocked.
+ */
+export type LoadResult = (FetchResult | LoadFailure) & { snapshot?: UsageSnapshot; nextInMs?: number }
 
 export interface PollerOptions {
-  /** Resolves credentials and fetches usage. Must not throw; failures are returned as `ok: false`. */
-  load: () => Promise<LoadResult>
+  /** Resolves data (cache or network). Must not throw; failures are returned as `ok: false`. */
+  load: (request: LoadRequest) => Promise<LoadResult>
   intervalMs?: number
+  /** Snapshot to show immediately, before the first load completes. */
+  initial?: UsageSnapshot | null
   now?: () => Date
   timers?: Timers
 }
@@ -41,8 +55,8 @@ export interface PollerOptions {
 export interface Poller {
   start(): void
   stop(): void
-  /** Forces a fetch unless one ran (or is blocked by backoff / rate limiting) within the debounce window. */
-  refresh(): Promise<boolean>
+  /** Asks the loader for fresh data unless one load is already running. Resolves `false` when it was skipped. */
+  refresh(maxAgeMs?: number): Promise<boolean>
   getState(): PollerState
   subscribe(listener: (state: PollerState) => void): () => void
 }
@@ -66,25 +80,24 @@ class PollerImpl implements Poller {
   private readonly now: () => Date
   private readonly timers: Timers
   private readonly listeners = new Set<(state: PollerState) => void>()
-  private state: PollerState = { snapshot: null, error: null, lastAttemptAt: null, loading: false }
+  private state: PollerState
   private handle: unknown = null
   private running = false
   private stopped = false
-  private failures = 0
-  private blockedUntil = 0
   private inFlight: Promise<void> | null = null
 
   constructor(private readonly options: PollerOptions) {
     this.intervalMs = clampInterval(options.intervalMs)
     this.now = options.now ?? (() => new Date())
     this.timers = options.timers ?? realTimers
+    this.state = { snapshot: options.initial ?? null, error: null, lastAttemptAt: null, loading: false }
   }
 
   start(): void {
     if (this.running) return
     this.running = true
     this.stopped = false
-    void this.run()
+    void this.run(this.intervalMs)
   }
 
   stop(): void {
@@ -95,9 +108,9 @@ class PollerImpl implements Poller {
     this.listeners.clear()
   }
 
-  async refresh(): Promise<boolean> {
-    if (this.inFlight || this.now().getTime() < this.blockedUntil) return false
-    await this.run()
+  async refresh(maxAgeMs = MANUAL_MAX_AGE_MS): Promise<boolean> {
+    if (this.inFlight) return false
+    await this.run(maxAgeMs)
     return true
   }
 
@@ -115,38 +128,28 @@ class PollerImpl implements Poller {
     for (const listener of this.listeners) listener(this.state)
   }
 
-  private nextDelay(result: LoadResult): number {
-    if (result.ok) return this.intervalMs
-    if (result.kind === "rate_limited") return Math.max(this.intervalMs, result.retryAfterMs ?? 0)
-    if (BACKOFF_KINDS.has(result.kind)) return Math.min(MAX_BACKOFF_MS, this.intervalMs * 2 ** this.failures)
-    return this.intervalMs
-  }
-
   private schedule(delay: number): void {
     if (this.handle !== null) this.timers.clear(this.handle)
-    this.handle = this.running ? this.timers.set(() => void this.run(), delay) : null
+    this.handle = this.running ? this.timers.set(() => void this.run(this.intervalMs), delay) : null
   }
 
-  private run(): Promise<void> {
+  private run(maxAgeMs: number): Promise<void> {
     if (!this.inFlight) {
-      this.inFlight = this.attempt().finally(() => {
+      this.inFlight = this.attempt(maxAgeMs).finally(() => {
         this.inFlight = null
       })
     }
     return this.inFlight
   }
 
-  private async attempt(): Promise<void> {
-    const startedAt = this.now()
-    this.setState({ loading: true, lastAttemptAt: startedAt })
-    const result = await this.options.load()
-    const delay = this.nextDelay(result)
+  private async attempt(maxAgeMs: number): Promise<void> {
+    this.setState({ loading: true, lastAttemptAt: this.now() })
+    const result = await this.options.load({ maxAgeMs })
     if (this.stopped) return
-    this.failures = !result.ok && BACKOFF_KINDS.has(result.kind) ? this.failures + 1 : 0
-    const blocking = !result.ok && BLOCKING_KINDS.has(result.kind)
-    this.blockedUntil = startedAt.getTime() + (blocking ? delay : MIN_INTERVAL_MS)
-    if (result.ok) this.setState({ snapshot: result.snapshot, error: null, loading: false })
-    else this.setState({ error: { kind: result.kind, message: result.message }, loading: false })
-    this.schedule(delay)
+    const retryAfter = result.ok ? undefined : result.retryAfterMs
+    const retryAt = retryAfter === undefined ? null : new Date(this.now().getTime() + retryAfter)
+    const error = result.ok ? null : { kind: result.kind, message: result.message, retryAt }
+    this.setState({ snapshot: result.snapshot ?? this.state.snapshot, error, loading: false })
+    this.schedule(Math.max(MIN_DELAY_MS, result.nextInMs ?? this.intervalMs))
   }
 }

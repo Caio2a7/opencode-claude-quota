@@ -82,12 +82,12 @@ describe("fetchUsage: failures", () => {
   test.each([
     ["30", 30_000],
     ["1", 1_000],
-    [undefined, 60_000],
-    ["abc", 60_000],
-    ["0", 60_000],
-    ["-5", 60_000],
-    ["", 60_000],
-  ])("429 retry-after %p -> %d ms", async (header, expected) => {
+    [undefined, undefined],
+    ["abc", undefined],
+    ["0", undefined],
+    ["-5", undefined],
+    ["", undefined],
+  ])("429 retry-after %p -> %p ms", async (header, expected) => {
     const headers: Record<string, string> = header === undefined ? {} : { "retry-after": header }
     const r = await kindOf(respond(429, "slow down", headers))
     expect(r.kind).toBe("rate_limited")

@@ -58,10 +58,14 @@ function extraRow(extra: ExtraUsage | null): Row[] {
   return [{ kind: "text", text: `Extra  ${used}${limit}`, tone: "text" }]
 }
 
-function errorRows(state: PollerState): Row[] {
-  if (!state.error) return []
-  const stale = state.snapshot ? " (stale)" : ""
-  return [{ kind: "text", text: `${state.error.message}${stale}`, tone: "muted" }]
+function errorRows(state: PollerState, now: Date): Row[] {
+  const { error, snapshot } = state
+  if (!error) return []
+  if (error.kind === "rate_limited") {
+    const retry = error.retryAt ? ` · retry in ${formatDuration(error.retryAt.getTime() - now.getTime())}` : ""
+    return [{ kind: "text", text: `rate limited${retry}`, tone: "muted" }]
+  }
+  return [{ kind: "text", text: `${error.message}${snapshot ? " (stale)" : ""}`, tone: "muted" }]
 }
 
 function breakdownRows(breakdown: BreakdownRow[]): Row[] {
@@ -89,7 +93,7 @@ export function buildRows(state: PollerState, now: Date, options: QuotaOptions):
   } else if (state.loading) {
     rows.push({ kind: "text", text: "Loading…", tone: "muted" })
   }
-  rows.push(...errorRows(state))
+  rows.push(...errorRows(state, now))
   if (snap) {
     const age = formatAge(now.getTime() - snap.fetchedAt.getTime())
     rows.push({ kind: "text", text: `updated ${age}`, tone: "muted" })

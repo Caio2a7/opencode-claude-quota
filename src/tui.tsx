@@ -1,8 +1,12 @@
+import { homedir } from "node:os"
 import { createSignal } from "solid-js"
 import type { Plugin } from "@opencode/plugin/tui"
 import { createLoader } from "./loader"
 import { parseOptions } from "./options"
-import { createPoller } from "./poller"
+import { createCoordinator } from "./coordinator"
+import { createPoller, POST_TURN_MAX_AGE_MS } from "./poller"
+import { defaultCacheDir, nodeFs } from "./shared-fs"
+import { createSharedStore } from "./shared-state"
 import { buildRows } from "./rows"
 import { RefreshCommand } from "./command"
 import { createRefreshCommand } from "./toast"
@@ -17,9 +21,16 @@ const plugin = {
   id: ID,
   setup(context) {
     const options = parseOptions(context.options)
+    const store = createSharedStore({ dir: defaultCacheDir(process.env, homedir()), fs: nodeFs, now: Date.now })
     const poller = createPoller({
       intervalMs: options.refreshIntervalMs,
-      load: createLoader(options.credentialsPath),
+      initial: store.read().snapshot,
+      load: createCoordinator({
+        store,
+        fetchOnce: createLoader(options.credentialsPath),
+        intervalMs: options.refreshIntervalMs,
+        now: Date.now,
+      }),
     })
     const [state, setState] = createSignal(poller.getState())
     const [now, setNow] = createSignal(new Date())
@@ -27,7 +38,7 @@ const plugin = {
     const ticker = setInterval(() => setNow(new Date()), TICK_MS)
     const rows = () => buildRows(state(), now(), options)
 
-    const stopEvents = context.data.on("session.execution.succeeded", () => void poller.refresh())
+    const stopEvents = context.data.on("session.execution.succeeded", () => void poller.refresh(POST_TURN_MAX_AGE_MS))
 
     const forceRefresh = createRefreshCommand(poller, context.ui.toast)
 

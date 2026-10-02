@@ -4,7 +4,6 @@ import { VERSION } from "./version"
 
 export const USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 const DEFAULT_TIMEOUT_MS = 10_000
-const DEFAULT_RETRY_MS = 60_000
 const MAX_RETRY_MS = 60 * 60_000
 
 export interface FetchOptions {
@@ -13,11 +12,12 @@ export interface FetchOptions {
   now?: () => Date
 }
 
-function retryAfterMs(header: string | null): number {
+/** `undefined` when the header is absent or unusable, so callers can apply their own backoff. */
+function retryAfterMs(header: string | null): number | undefined {
   const seconds = header === null ? NaN : Number(header.trim())
   return header !== null && header.trim() !== "" && Number.isFinite(seconds) && seconds > 0
     ? Math.min(seconds * 1000, MAX_RETRY_MS)
-    : DEFAULT_RETRY_MS
+    : undefined
 }
 
 function failure(kind: "network" | "unauthorized" | "rate_limited" | "http" | "parse", message: string, retryMs?: number): FetchResult {
