@@ -1,6 +1,6 @@
 {
   "name": "opencode-claude-quota",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Claude Code usage, quota and rate limits (5h session, weekly, per-model) in the OpenCode v2 sidebar.",
   "type": "module",
   "license": "MIT",

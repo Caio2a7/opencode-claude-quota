@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-19
+
+### Changed
+
+- Publish releases from GitHub Actions via npm trusted publishing (OIDC) with provenance.
+
 ## [0.1.0] - 2026-10-19
 
 ### Added
@@ -19,5 +25,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Options: `refreshInterval`, `showBreakdown`, `showModels`, `credentialsPath`.
 - Strictly read-only credential lookup (`CLAUDE_CODE_OAUTH_TOKEN`, `~/.claude/.credentials.json`, macOS Keychain).
 
-[Unreleased]: https://github.com/Caio2a7/opencode-claude-quota/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Caio2a7/opencode-claude-quota/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Caio2a7/opencode-claude-quota/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Caio2a7/opencode-claude-quota/releases/tag/v0.1.0
