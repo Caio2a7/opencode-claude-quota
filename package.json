@@ -17,15 +17,24 @@
     "opencode",
     "opencode-plugin",
     "opencode-v2",
+    "opencode-tui",
+    "opencode-sidebar",
+    "sidebar",
     "claude",
     "claude-code",
+    "claude-pro",
+    "claude-max",
     "anthropic",
     "usage",
     "quota",
     "rate-limit",
     "usage-limits",
-    "sidebar",
-    "tui"
+    "tui",
+    "terminal",
+    "linux",
+    "macos",
+    "windows",
+    "cross-platform"
   ],
   "exports": {
     "./tui": "./dist/tui.js"
@@ -60,6 +69,15 @@
   "sideEffects": false,
   "engines": {
     "node": ">=20"
+  },
+  "os": [
+    "linux",
+    "darwin",
+    "win32"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "peerDependenciesMeta": {
     "@opentui/core": {

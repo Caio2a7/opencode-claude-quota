@@ -6,32 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-### Fixed
-
-- Persistent HTTP 429 caused by the non-Claude-Code user agent: requests now identify as `claude-code/<installed
-  version>` (fallback `2.1.287`), which the usage endpoint does not throttle. Cache files from earlier versions
-  (state schema v1) are discarded, so an old persisted 429 block does not outlive the upgrade.
-- Running several OpenCode instances at once no longer triggers HTTP 429: instances share one cached snapshot, one
-  cross-process fetch lock and one persisted backoff, so N windows make about one request per interval.
-- Rate limiting no longer looks like an error: the sidebar keeps showing the data and adds a muted
-  "rate limited · retry in Xm" line.
-
-### Changed
-
-- Default `refreshInterval` is now 120s (was 60s) and the minimum is 60s (was 30s).
-- A refresh after a finished turn only fetches when the shared snapshot is older than 60s.
-- 429 responses honour `Retry-After`; without it the block grows 2m, 4m, 8m… up to 30m and resets on success. Network
-  and HTTP errors share the same persisted backoff.
-- The sidebar renders immediately from the shared cache on startup.
-
-## [0.1.0]
+## [0.1.0] - 2026-10-19
 
 ### Added
 
-- OpenCode v2 CLI plugin rendering a "Claude Quota" block in the session sidebar.
-- 5-hour session and weekly limits, optional per-model weekly limits (Opus, Sonnet).
-- Weekly usage breakdown by surface and extra paid usage when enabled.
-- Polling with a 60s default (30s minimum), exponential backoff, rate-limit awareness and stale-while-error display.
-- Debounced refresh when a session finishes a turn and the `/claude-quota` slash command / palette entry.
+- OpenCode V2 CLI/TUI plugin rendering a "Claude Quota" block in the session sidebar (`sidebar.content` slot).
+- 5-hour session and weekly limits, plus optional per-model weekly limits (Opus, Sonnet).
+- Weekly usage breakdown by surface (Claude Code, Chats, Cowork, …) and extra paid usage when enabled.
+- Cross-instance coordination through `${XDG_CACHE_HOME:-~/.cache}/opencode-claude-quota/state.json` (`0700`/`0600`, atomic rename) and `fetch.lock`: shared snapshot cache, single-flight requests, `Retry-After` support and persisted exponential backoff (2m → 30m).
+- `User-Agent: claude-code/<installed version>` header (fallback `claude-code/2.1.287`) to avoid endpoint throttling on `GET https://api.anthropic.com/api/oauth/usage`.
+- Polite polling with a 120s default (60s minimum), stale-while-error / rate-limit display, debounced post-turn refresh (only when the shared snapshot is older than 60s) and `/claude-quota` slash command / command-palette entry.
 - Options: `refreshInterval`, `showBreakdown`, `showModels`, `credentialsPath`.
 - Strictly read-only credential lookup (`CLAUDE_CODE_OAUTH_TOKEN`, `~/.claude/.credentials.json`, macOS Keychain).
+
+[Unreleased]: https://github.com/Caio2a7/opencode-claude-quota/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Caio2a7/opencode-claude-quota/releases/tag/v0.1.0

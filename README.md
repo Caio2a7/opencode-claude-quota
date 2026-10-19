@@ -1,8 +1,16 @@
 # opencode-claude-quota
 
-**Claude Code usage, quota and rate limits in the OpenCode sidebar.** An [OpenCode](https://opencode.ai) v2 TUI plugin
-that shows your Claude subscription's 5-hour session and weekly limits, per-model weekly caps, weekly usage by surface
-and extra paid usage, right next to your session.
+**Claude Code usage, quota and rate limits in the OpenCode TUI sidebar — 5-hour session, weekly, per-model and per-surface limits, themed by your OpenCode theme.**
+
+[![npm version](https://img.shields.io/npm/v/opencode-claude-quota.svg)](https://www.npmjs.com/package/opencode-claude-quota)
+[![npm downloads](https://img.shields.io/npm/dm/opencode-claude-quota.svg)](https://www.npmjs.com/package/opencode-claude-quota)
+[![CI](https://github.com/Caio2a7/opencode-claude-quota/actions/workflows/ci.yml/badge.svg)](https://github.com/Caio2a7/opencode-claude-quota/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/opencode-claude-quota.svg)](LICENSE)
+[![platforms](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey.svg)](#requirements)
+[![OpenCode V2](https://img.shields.io/badge/OpenCode-V2-blue.svg)](https://opencode.ai)
+
+An [OpenCode](https://opencode.ai) V2 CLI/TUI plugin that shows your Claude subscription's 5-hour session and weekly
+limits, per-model weekly caps, weekly usage by surface and extra paid usage, right next to your session.
 
 ```
 Claude Quota
@@ -26,33 +34,25 @@ updated 12s ago
 - Polite polling: 120s default (60s minimum), shared across OpenCode windows, `Retry-After` support and persisted
   exponential backoff; a refresh after a finished turn only fetches when the data is older than 60s.
 - `/claude-quota` slash command (and command-palette entry) to force a refresh.
-- Native OpenCode **v2** plugin, strictly read-only credential handling.
+- Native OpenCode **V2** plugin, strictly read-only credential handling, zero runtime dependencies.
 
 ## Requirements
 
-- OpenCode **v2** (`@opencode/plugin` 2.x).
+- OpenCode **V2** (`@opencode/plugin` 2.x). CLI plugins are configured in `~/.config/opencode/cli.json`, not
+  `opencode.json` or V1 `tui.json`.
 - A Claude Pro/Max subscription, signed in through [Claude Code](https://claude.com/claude-code) (`claude` login) or
   `CLAUDE_CODE_OAUTH_TOKEN` set.
+- Linux, macOS or Windows.
 
-## Install
+## Install the OpenCode plugin
 
-Add the package to `~/.config/opencode/cli.json`:
+Add the package to the `plugins` array of `~/.config/opencode/cli.json` and restart the TUI:
 
 ```json
 {
   "plugins": ["opencode-claude-quota"]
 }
 ```
-
-Install methods verified against OpenCode 2.x:
-
-- **npm-style package** (verified with a tarball from `npm pack`, entry `"file:/abs/path/opencode-claude-quota-0.1.0.tgz"`):
-  OpenCode installs the package into its cache and loads the prebuilt `dist/tui.js` through `exports["./tui"]`. The
-  published package ships compiled JavaScript only, because the host does not compile `.tsx` under `node_modules`.
-- **Local checkout** (verified with the absolute path entry below): OpenCode loads the root `tui.tsx` shim, which
-  re-exports `src/tui.tsx`. Run `bun install` in the checkout first. The shim is not part of the published package.
-
-`opencode plugin add` only accepts npm registry or Git specifiers and was not tested.
 
 With options:
 
@@ -67,7 +67,13 @@ With options:
 }
 ```
 
-From a local checkout, use its absolute path:
+From a local checkout:
+
+```sh
+bun install
+```
+
+Then use the absolute path of the checkout:
 
 ```json
 {
@@ -102,7 +108,7 @@ may stop working at any time. Only your own usage data is requested, with your o
 Credentials are looked up **read-only**, in this order:
 
 1. `CLAUDE_CODE_OAUTH_TOKEN` environment variable
-2. `~/.claude/.credentials.json` (or `credentialsPath`)
+2. `~/.claude/.credentials.json` (or `credentialsPath`, or `$CLAUDE_CONFIG_DIR/.credentials.json`)
 3. macOS Keychain (`Claude Code-credentials`), on macOS only and only when the credentials file is missing; macOS
    may show a keychain access prompt the first time.
 
@@ -131,10 +137,16 @@ fresh `claude` login is picked up quickly.
 
 - The token is sent only to `api.anthropic.com` over HTTPS and never leaves your machine otherwise.
 - The token is never written, logged or cached to disk, and **never refreshed**: if it expired, run `claude` once.
-- No cookie scraping, no browser sessions, no telemetry. The only subprocess is `claude --version` (no shell, 3s timeout,
-  once per TUI process) to read the installed Claude Code version for the user agent.
+- No cookie scraping, no browser sessions, no telemetry. Subprocesses use fixed argument lists, `shell: false` and a
+  short timeout: `claude --version` (3 s timeout, once per TUI process) to read the installed Claude Code version for
+  the user agent, and `security` (5 s timeout, macOS only) when reading the Keychain fallback.
+- Zero runtime dependencies.
 - The usage endpoint is **undocumented and unofficial**; it may change or disappear without notice. The plugin parses
   it defensively and shows a muted message instead of failing.
+- v0.1.0 was published manually; releases from v0.1.1 onward are published from GitHub Actions via npm trusted
+  publishing (OIDC) with provenance.
+
+See [SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## Troubleshooting
 
@@ -148,10 +160,10 @@ fresh `claude` login is picked up quickly.
 
 Plugin load errors are logged to `~/.local/share/opencode/log/opencode.log`.
 
-## Why not the v1 plugins?
+## Why not the V1 plugins?
 
-OpenCode v1 usage plugins target the old TUI plugin API and do not load on v2. This plugin is built on
-`@opencode/plugin/tui` and the v2 slot system, and keeps credential access read-only.
+OpenCode V1 usage plugins target the old TUI plugin API and do not load on V2. This plugin is built on
+`@opencode/plugin/tui` and the V2 slot system, and keeps credential access read-only.
 
 ## Development
 
@@ -163,6 +175,12 @@ bun run build   # compiles dist/tui.js (also runs on npm pack)
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Related
+
+- [OpenCode](https://opencode.ai) — the open-source AI coding agent.
+- [opencode-system-monitor](https://github.com/Caio2a7/opencode-system-monitor) — live CPU, RAM, disk, NVIDIA GPU, VRAM
+  and swap usage bars in the OpenCode sidebar, by the same author.
 
 ## License
 

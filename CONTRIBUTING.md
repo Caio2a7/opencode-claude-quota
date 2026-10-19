@@ -8,17 +8,43 @@ Thanks for helping out! Bug reports and pull requests are welcome.
 bun install
 bun test
 bun run typecheck
+bun run build
 ```
+
+| Script              | Purpose                                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| `bun test`          | Run the test suite (`bun:test`).                                                                         |
+| `bun run typecheck` | Strict TypeScript check.                                                                                 |
+| `bun run build`     | Bundle `src/tui.tsx` to `dist/tui.js`, rewriting solid/opentui imports to the host's runtime module ids. |
+
+CI runs typecheck, tests and build on Ubuntu, macOS and Windows.
 
 ## Guidelines
 
-- Keep the plugin **read-only** with respect to Claude credentials: never write, refresh or log tokens.
+- Strict TypeScript; no `any`, no stubs.
+- Keep files under 300 lines and functions under 40 lines.
 - No new runtime dependencies without a strong reason.
-- Keep files under 300 lines and functions under 40 lines; no stubs or `any`.
-- Add or update tests in `tests/` for any behaviour change (`bun:test`).
-- Use [Conventional Commits](https://www.conventionalcommits.org/) and update `CHANGELOG.md`.
+- Keep the plugin **read-only** with respect to Claude credentials: never write, refresh or log tokens.
+- Subprocesses use fixed argument lists, `shell: false` and a short timeout.
 - The usage endpoint is unofficial; parse defensively and degrade gracefully when fields disappear.
+- Add or update tests in `tests/` for any behaviour change (`bun:test`).
+- Use [Conventional Commits](https://www.conventionalcommits.org/) in English and update `CHANGELOG.md`.
 
 ## Local testing in OpenCode
 
-Add the checkout to `~/.config/opencode/cli.json` (see the README) and restart OpenCode.
+Run `bun install && bun run build`, add the checkout's absolute path to the `plugins` array of
+`~/.config/opencode/cli.json` (see the README) and restart OpenCode.
+
+## Release process
+
+Publishing uses npm trusted publishing (repo `Caio2a7/opencode-claude-quota`, workflow `release.yml`) — no token needed.
+
+Then:
+
+1. Bump `version` in `package.json` and `VERSION` in `src/version.ts`.
+2. Move the `CHANGELOG.md` entries under the new version heading with the release date.
+3. Commit to `main`, then tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+4. GitHub Actions publishes to npm with provenance (from v0.1.1 onward; v0.1.0 was published manually).
+
+The tag must point to a commit on `main` (otherwise the release workflow fails) and must equal the `package.json`
+version.
