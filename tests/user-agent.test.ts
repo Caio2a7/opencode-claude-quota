@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { join } from "node:path"
 import {
   createUserAgentResolver,
   detectClaudeVersion,
@@ -9,7 +10,7 @@ import {
 } from "../src/user-agent"
 
 const HOME = "/home/u"
-const LOCAL = `${HOME}/.local/bin/claude`
+const LOCAL = join(HOME, ".local", "bin", "claude")
 
 describe("parseClaudeVersion", () => {
   test.each([

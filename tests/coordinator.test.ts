@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { join } from "node:path"
 import { backoffMs, BACKOFF_MAX_MS, createCoordinator, LOCK_RETRY_MS } from "../src/coordinator"
 import { createPoller, type LoadResult, type Timers } from "../src/poller"
 import { createSharedStore } from "../src/shared-state"
@@ -7,12 +8,14 @@ import { createMemFs } from "./helpers/memfs"
 
 const MIN = 60_000
 const INTERVAL = 2 * MIN
+const DIR = "/cache/ocq"
+const LOCK = join(DIR, "fetch.lock")
 
 function world() {
   let t = 1_000_000_000_000
   const now = () => t
   const mem = createMemFs(now)
-  const store = createSharedStore({ dir: "/cache/ocq", fs: mem.fs, now })
+  const store = createSharedStore({ dir: DIR, fs: mem.fs, now })
   const queue: LoadResult[] = []
   let fetches = 0
   let gate: Promise<void> | null = null
@@ -176,12 +179,12 @@ describe("single flight", () => {
     expect(waiting).toMatchObject({ ok: false, nextInMs: LOCK_RETRY_MS })
     open()
     await a
-    expect(w.mem.files.has("/cache/ocq/fetch.lock")).toBe(false)
+    expect(w.mem.files.has(LOCK)).toBe(false)
   })
 
   test("a crashed holder's stale lock does not block fetching forever", async () => {
     const w = world()
-    w.mem.files.set("/cache/ocq/fetch.lock", { data: "x", mtime: w.now() - 31_000 })
+    w.mem.files.set(LOCK, { data: "x", mtime: w.now() - 31_000 })
     w.queue.push(w.ok(3))
     expect((await w.coordinator()(req)).ok).toBe(true)
     expect(w.fetches()).toBe(1)
@@ -191,7 +194,7 @@ describe("single flight", () => {
     const w = world()
     const load = createCoordinator({ store: w.store, fetchOnce: () => Promise.reject(new Error("x")), intervalMs: INTERVAL, now: w.now })
     await expect(load(req)).rejects.toThrow()
-    expect(w.mem.files.has("/cache/ocq/fetch.lock")).toBe(false)
+    expect(w.mem.files.has(LOCK)).toBe(false)
   })
 })
 

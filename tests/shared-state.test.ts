@@ -7,9 +7,9 @@ import { createSharedStore, emptyState, LOCK_STALE_MS, type SharedState } from "
 import type { UsageSnapshot } from "../src/types"
 import { createMemFs } from "./helpers/memfs"
 
-const DIR = "/cache/ocq"
-const STATE = `${DIR}/state.json`
-const LOCK = `${DIR}/fetch.lock`
+const DIR = join(tmpdir(), "cache", "ocq")
+const STATE = join(DIR, "state.json")
+const LOCK = join(DIR, "fetch.lock")
 
 const snapshot: UsageSnapshot = {
   windows: [{ id: "five_hour", label: "5h", utilization: 42, resetsAt: new Date("2026-10-02T20:00:00Z") }],
@@ -136,10 +136,12 @@ describe("lock", () => {
 
 describe("paths and real filesystem", () => {
   test("defaultCacheDir honours an absolute XDG_CACHE_HOME only", () => {
-    expect(defaultCacheDir({ XDG_CACHE_HOME: "/x/cache" }, "/home/u")).toBe("/x/cache/opencode-claude-quota")
-    expect(defaultCacheDir({ XDG_CACHE_HOME: "relative" }, "/home/u")).toBe("/home/u/.cache/opencode-claude-quota")
-    expect(defaultCacheDir({ XDG_CACHE_HOME: " " }, "/home/u")).toBe("/home/u/.cache/opencode-claude-quota")
-    expect(defaultCacheDir({}, "/home/u")).toBe("/home/u/.cache/opencode-claude-quota")
+    const absXdg = join(tmpdir(), "x", "cache")
+    const home = join(tmpdir(), "home", "u")
+    expect(defaultCacheDir({ XDG_CACHE_HOME: absXdg }, home)).toBe(join(absXdg, "opencode-claude-quota"))
+    expect(defaultCacheDir({ XDG_CACHE_HOME: "relative" }, home)).toBe(join(home, ".cache", "opencode-claude-quota"))
+    expect(defaultCacheDir({ XDG_CACHE_HOME: " " }, home)).toBe(join(home, ".cache", "opencode-claude-quota"))
+    expect(defaultCacheDir({}, home)).toBe(join(home, ".cache", "opencode-claude-quota"))
   })
 
   test("nodeFs creates the directory 0700 and files 0600", () => {
@@ -149,11 +151,15 @@ describe("paths and real filesystem", () => {
       const store = createSharedStore({ dir, fs: nodeFs, now: Date.now })
       expect(store.write(state)).toBe(true)
       expect(store.read()).toEqual(state)
-      expect(statSync(dir).mode & 0o777).toBe(0o700)
-      expect(statSync(join(dir, "state.json")).mode & 0o777).toBe(0o600)
+      if (process.platform !== "win32") {
+        expect(statSync(dir).mode & 0o777).toBe(0o700)
+        expect(statSync(join(dir, "state.json")).mode & 0o777).toBe(0o600)
+      }
       const release = store.tryLock()
       expect(release).not.toBeNull()
-      expect(statSync(join(dir, "fetch.lock")).mode & 0o777).toBe(0o600)
+      if (process.platform !== "win32") {
+        expect(statSync(join(dir, "fetch.lock")).mode & 0o777).toBe(0o600)
+      }
       expect(store.tryLock()).toBeNull()
       release!()
     } finally {
