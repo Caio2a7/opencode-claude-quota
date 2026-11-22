@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Removed
+
+- Sidebar "This week" usage-by-surface section (along with the `showBreakdown` option) and the "updated … ago" footer line.
+
 ## [0.1.1] - 2026-10-19
 
 ### Changed

@@ -5,7 +5,6 @@ describe("parseOptions", () => {
   test("applies defaults for missing options", () => {
     expect(parseOptions(undefined)).toEqual({
       refreshIntervalMs: 120_000,
-      showBreakdown: true,
       showModels: true,
       credentialsPath: undefined,
     })
@@ -29,12 +28,10 @@ describe("parseOptions", () => {
   })
 
   test("booleans must be real booleans", () => {
-    expect(parseOptions({ showBreakdown: false, showModels: false })).toMatchObject({
-      showBreakdown: false,
+    expect(parseOptions({ showModels: false })).toMatchObject({
       showModels: false,
     })
-    expect(parseOptions({ showBreakdown: "no", showModels: 0 })).toMatchObject({
-      showBreakdown: true,
+    expect(parseOptions({ showModels: 0 })).toMatchObject({
       showModels: true,
     })
   })

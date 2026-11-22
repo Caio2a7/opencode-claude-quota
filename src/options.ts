@@ -2,7 +2,6 @@ import { clampInterval } from "./poller"
 
 export interface QuotaOptions {
   refreshIntervalMs: number
-  showBreakdown: boolean
   showModels: boolean
   credentialsPath: string | undefined
 }
@@ -18,7 +17,6 @@ export function parseOptions(raw: Readonly<Record<string, unknown>> | undefined)
   const path = typeof input.credentialsPath === "string" ? input.credentialsPath.trim() : ""
   return {
     refreshIntervalMs: clampInterval(seconds),
-    showBreakdown: bool(input.showBreakdown, true),
     showModels: bool(input.showModels, true),
     credentialsPath: path === "" ? undefined : path,
   }

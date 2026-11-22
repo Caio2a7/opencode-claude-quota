@@ -1,6 +1,6 @@
-import { formatAge, formatDuration, renderBar, severity } from "./format"
+import { formatDuration, renderBar, severity } from "./format"
 import type { PollerState } from "./poller"
-import type { BreakdownRow, ExtraUsage, Severity, UsageWindow } from "./types"
+import type { ExtraUsage, Severity, UsageWindow } from "./types"
 import type { QuotaOptions } from "./options"
 
 export type Tone = "text" | "muted" | "success" | "warning" | "error"
@@ -68,19 +68,6 @@ function errorRows(state: PollerState, now: Date): Row[] {
   return [{ kind: "text", text: `${error.message}${snapshot ? " (stale)" : ""}`, tone: "muted" }]
 }
 
-function breakdownRows(breakdown: BreakdownRow[]): Row[] {
-  const parts = breakdown.filter((b) => Math.round(b.percent) > 0)
-  if (parts.length === 0) return []
-  const labelWidth = LABEL_WIDTH + BAR_WIDTH
-  return [
-    { kind: "text", text: "This week", tone: "muted" },
-    ...parts.map((b): Row => {
-      const pct = `${String(Math.round(b.percent)).padStart(4)}%`
-      return { kind: "text", text: `${b.label.slice(0, labelWidth - 1).padEnd(labelWidth)}${pct}`, tone: "text" }
-    }),
-  ]
-}
-
 /** Pure view-model: everything the sidebar shows, independent of the renderer. */
 export function buildRows(state: PollerState, now: Date, options: QuotaOptions): Row[] {
   const rows: Row[] = []
@@ -89,14 +76,9 @@ export function buildRows(state: PollerState, now: Date, options: QuotaOptions):
     const windows = snap.windows.filter((w) => PRIMARY.has(w.id) || options.showModels)
     for (const w of windows) rows.push(...windowRows(w, now))
     rows.push(...extraRow(snap.extraUsage))
-    if (options.showBreakdown) rows.push(...breakdownRows(snap.breakdown))
   } else if (state.loading) {
     rows.push({ kind: "text", text: "Loading…", tone: "muted" })
   }
   rows.push(...errorRows(state, now))
-  if (snap) {
-    const age = formatAge(now.getTime() - snap.fetchedAt.getTime())
-    rows.push({ kind: "text", text: `updated ${age}`, tone: "muted" })
-  }
   return rows
 }

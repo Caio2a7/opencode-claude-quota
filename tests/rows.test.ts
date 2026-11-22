@@ -23,21 +23,21 @@ const texts = (state: PollerState, opts = parseOptions({})) =>
   buildRows(state, now, opts).map((r) => (r.kind === "text" ? r.text : `${r.label}${r.percent}`))
 
 describe("buildRows", () => {
-  test("renders windows, reset, extra usage, breakdown and age", () => {
+  test("renders windows, reset and extra usage without breakdown or updated footer", () => {
     const out = texts(base)
     expect(out).toContain("5h       51%")
     expect(out).toContain("       resets in 1h 10m")
     expect(out).toContain("Extra  $12.50 / $50.00")
-    expect(out).toContain("This week")
-    expect(out).toContain("Claude Code".padEnd(21) + "  86%")
+    expect(out.some((t) => t.includes("This week"))).toBe(false)
+    expect(out.some((t) => t.includes("Claude Code"))).toBe(false)
     expect(out.some((t) => t.startsWith("Nothing"))).toBe(false)
-    expect(out.at(-1)).toBe("updated 12s ago")
+    expect(out.some((t) => t.includes("updated"))).toBe(false)
   })
 
-  test("respects showModels and showBreakdown", () => {
-    const out = texts(base, parseOptions({ showModels: false, showBreakdown: false }))
+  test("respects showModels", () => {
+    const out = texts(base, parseOptions({ showModels: false }))
     expect(out.some((t) => t.startsWith("Opus"))).toBe(false)
-    expect(out.some((t) => t.startsWith("This week"))).toBe(false)
+    expect(out.some((t) => t.includes("This week"))).toBe(false)
   })
 
   test("scales extra usage by decimalPlaces and shows raw numbers when null", () => {
@@ -70,7 +70,7 @@ describe("buildRows", () => {
     const out = texts({ ...base, error: { kind: "rate_limited", message: "Claude usage endpoint rate limited (HTTP 429)", retryAt } })
     expect(out).toContain("rate limited · retry in 4m")
     expect(out.some((t) => t.includes("429") || t.includes("stale"))).toBe(false)
-    expect(out.some((t) => t.startsWith("updated"))).toBe(true)
+    expect(out.some((t) => t.includes("updated"))).toBe(false)
     expect(out.some((t) => t.includes("5h"))).toBe(true)
   })
 
